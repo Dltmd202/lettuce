@@ -230,7 +230,29 @@ public interface RedisKeyReactiveCommands<K, V> {
      * @param pattern the pattern type: patternkey (pattern).
      * @return K array-reply list of keys matching {@code pattern}.
      */
+    Flux<K> keys(String pattern);
+
+    /**
+     * Find all keys matching the given pattern.
+     *
+     * @param pattern the pattern type: patternkey (pattern).
+     * @return K array-reply list of keys matching {@code pattern}.
+     * @deprecated since 7.0, use {@link RedisKeyReactiveCommands#keys(String)}
+     */
+    @Deprecated
     Flux<K> keys(K pattern);
+
+    /**
+     * Find all keys matching the given pattern.
+     *
+     * @param channel the channel.
+     * @param pattern the pattern.
+     * @return Long array-reply list of keys matching {@code pattern}.
+     * @deprecated since 6.0 in favor of consuming large results through the {@link org.reactivestreams.Publisher} returned by
+     *             {@link #keys}.
+     */
+    @Deprecated
+    Mono<Long> keys(KeyStreamingChannel<K> channel, String pattern);
 
     /**
      * Find all keys matching the given pattern.

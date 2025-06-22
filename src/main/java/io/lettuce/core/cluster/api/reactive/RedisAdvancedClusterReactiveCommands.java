@@ -181,7 +181,17 @@ public interface RedisAdvancedClusterReactiveCommands<K, V> extends RedisCluster
      *
      * @param pattern the pattern type: patternkey (pattern)
      * @return List&lt;K&gt; array-reply list of keys matching {@code pattern}.
-     * @see RedisKeyReactiveCommands#keys(Object)
+     * @see RedisKeyReactiveCommands#keys(String)
+     */
+    Flux<K> keys(String pattern);
+
+    /**
+     * Find all keys matching the given pattern on all cluster masters.
+     *
+     * @param pattern the pattern type: patternkey (pattern)
+     * @return List&lt;K&gt; array-reply list of keys matching {@code pattern}.
+     * @see RedisKeyReactiveCommands#keys(String)
+     * @deprecated since 7.0, use {@link RedisAdvancedClusterReactiveCommands#keys(String)}
      */
     Flux<K> keys(K pattern);
 
@@ -191,7 +201,18 @@ public interface RedisAdvancedClusterReactiveCommands<K, V> extends RedisCluster
      * @param channel the channel
      * @param pattern the pattern
      * @return Long array-reply list of keys matching {@code pattern}.
-     * @see RedisKeyReactiveCommands#keys(KeyStreamingChannel, Object)
+     * @see RedisKeyReactiveCommands#keys(KeyStreamingChannel, String)
+     */
+    Mono<Long> keys(KeyStreamingChannel<K> channel, String pattern);
+
+    /**
+     * Find all keys matching the given pattern on all cluster masters.
+     *
+     * @param channel the channel
+     * @param pattern the pattern
+     * @return Long array-reply list of keys matching {@code pattern}.
+     * @see RedisKeyReactiveCommands#keys(KeyStreamingChannel, String)
+     * @deprecated since 7.0, use {@link RedisAdvancedClusterReactiveCommands#keys(KeyStreamingChannel, String)}
      */
     Mono<Long> keys(KeyStreamingChannel<K> channel, K pattern);
 

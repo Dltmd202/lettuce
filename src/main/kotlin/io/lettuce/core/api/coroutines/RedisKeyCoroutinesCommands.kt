@@ -219,6 +219,22 @@ interface RedisKeyCoroutinesCommands<K : Any, V : Any> {
      * @param pattern the pattern type: patternkey (pattern).
      * @return List<K> array-reply list of keys matching `pattern`.
      */
+    fun keys(pattern: String): Flow<K>
+
+    /**
+     * Find all keys matching the given pattern.
+     *
+     * @param pattern the pattern type: patternkey (pattern).
+     * @return List<K> array-reply list of keys matching `pattern`.
+     */
+    @Deprecated(
+        message = "Since 7.0, use RedisKeyReactiveCommands.keys(String) instead",
+        replaceWith = ReplaceWith(
+            expression = "keys(pattern)",
+            imports = ["com.example.RedisKeyReactiveCommands.keys"]
+        ),
+        level = DeprecationLevel.WARNING
+    )
     fun keys(pattern: K): Flow<K>
 
     /**
