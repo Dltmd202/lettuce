@@ -229,6 +229,15 @@ public interface NodeSelectionKeyAsyncCommands<K, V> {
      * @param pattern the pattern type: patternkey (pattern).
      * @return List&lt;K&gt; array-reply list of keys matching {@code pattern}.
      */
+    AsyncExecutions<List<K>> keys(String pattern);
+
+    /**
+     * Find all keys matching the given pattern.
+     *
+     * @param pattern the pattern type: patternkey (pattern).
+     * @return List&lt;K&gt; array-reply list of keys matching {@code pattern}.
+     * @deprecated since 7.0, use {@link NodeSelectionKeyAsyncCommands#keys(String)}
+     */
     AsyncExecutions<List<K>> keys(K pattern);
 
     /**
@@ -237,6 +246,16 @@ public interface NodeSelectionKeyAsyncCommands<K, V> {
      * @param channel the channel.
      * @param pattern the pattern.
      * @return Long array-reply list of keys matching {@code pattern}.
+     */
+    AsyncExecutions<Long> keys(KeyStreamingChannel<K> channel, String pattern);
+
+    /**
+     * Find all keys matching the given pattern.
+     *
+     * @param channel the channel.
+     * @param pattern the pattern.
+     * @return Long array-reply list of keys matching {@code pattern}.
+     * @deprecated since 7.0, use {@link NodeSelectionKeyAsyncCommands#keys(KeyStreamingChannel, String)}
      */
     AsyncExecutions<Long> keys(KeyStreamingChannel<K> channel, K pattern);
 

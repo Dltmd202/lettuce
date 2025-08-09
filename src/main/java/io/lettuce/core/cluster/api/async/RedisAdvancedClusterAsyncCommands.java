@@ -287,7 +287,17 @@ public interface RedisAdvancedClusterAsyncCommands<K, V> extends RedisClusterAsy
      *
      * @param pattern the pattern type: patternkey (pattern)
      * @return List&lt;K&gt; array-reply list of keys matching {@code pattern}.
-     * @see RedisKeyAsyncCommands#keys(Object)
+     * @see RedisKeyAsyncCommands#keys(String)
+     */
+    RedisFuture<List<K>> keys(String pattern);
+
+    /**
+     * Find all keys matching the given pattern on all cluster upstream nodes.
+     *
+     * @param pattern the pattern type: patternkey (pattern)
+     * @return List&lt;K&gt; array-reply list of keys matching {@code pattern}.
+     * @see RedisKeyAsyncCommands#keys(String)
+     * @deprecated since 7.0, use {@link RedisAdvancedClusterAsyncCommands#keys(String)}
      */
     RedisFuture<List<K>> keys(K pattern);
 
@@ -297,7 +307,18 @@ public interface RedisAdvancedClusterAsyncCommands<K, V> extends RedisClusterAsy
      * @param channel the channel
      * @param pattern the pattern
      * @return Long array-reply list of keys matching {@code pattern}.
-     * @see RedisKeyAsyncCommands#keys(KeyStreamingChannel, Object)
+     * @see RedisKeyAsyncCommands#keys(KeyStreamingChannel, String)
+     */
+    RedisFuture<Long> keys(KeyStreamingChannel<K> channel, String pattern);
+
+    /**
+     * Find all keys matching the given pattern on all cluster upstream nodes.
+     *
+     * @param channel the channel
+     * @param pattern the pattern
+     * @return Long array-reply list of keys matching {@code pattern}.
+     * @see RedisKeyAsyncCommands#keys(KeyStreamingChannel, String)
+     * @deprecated since 7.0, use {@link RedisAdvancedClusterAsyncCommands#keys(KeyStreamingChannel, String)}
      */
     RedisFuture<Long> keys(KeyStreamingChannel<K> channel, K pattern);
 

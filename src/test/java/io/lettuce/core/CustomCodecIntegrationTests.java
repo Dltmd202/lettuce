@@ -14,6 +14,7 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import javax.inject.Inject;
 
+import io.lettuce.core.api.RedisKeyCommands;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -130,7 +131,7 @@ class CustomCodecIntegrationTests extends TestSupport {
         connection.set(key.getBytes(), null);
         assertThat(connection.get(key.getBytes())).isEqualTo(new byte[0]);
 
-        List<byte[]> keys = connection.keys(key.getBytes());
+        List<byte[]> keys = connection.keys(key);
         assertThat(keys).contains(key.getBytes());
 
         connection.getStatefulConnection().close();
@@ -146,7 +147,7 @@ class CustomCodecIntegrationTests extends TestSupport {
 
         connection.set(wrap, wrap);
 
-        List<ByteBuffer> keys = connection.keys(wrap);
+        List<ByteBuffer> keys = connection.keys(value);
         assertThat(keys).hasSize(1);
         ByteBuffer byteBuffer = keys.get(0);
         byte[] bytes = new byte[byteBuffer.remaining()];
