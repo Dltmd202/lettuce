@@ -27,7 +27,9 @@ import io.lettuce.core.internal.LettuceAssert;
 import io.lettuce.core.models.stream.ClaimedMessages;
 import io.lettuce.core.models.stream.PendingMessage;
 import io.lettuce.core.models.stream.PendingMessages;
+import io.lettuce.core.models.stream.StreamEntryDeletionResult;
 import io.lettuce.core.output.*;
+import io.lettuce.core.output.StreamEntryDeletionResultListOutput;
 import io.lettuce.core.protocol.BaseRedisCommandBuilder;
 import io.lettuce.core.protocol.Command;
 import io.lettuce.core.protocol.CommandArgs;
@@ -46,6 +48,7 @@ import static io.lettuce.core.internal.LettuceStrings.string;
 import static io.lettuce.core.protocol.CommandKeyword.*;
 import static io.lettuce.core.protocol.CommandType.*;
 import static io.lettuce.core.protocol.CommandType.COPY;
+import static io.lettuce.core.protocol.CommandType.DEL;
 import static io.lettuce.core.protocol.CommandType.SAVE;
 
 /**
@@ -318,6 +321,45 @@ class RedisCommandBuilder<K, V> extends BaseRedisCommandBuilder<K, V> {
 
         CommandArgs<K, V> args = new CommandArgs<>(codec);
         args.add(XOR).addKey(destination).addKeys(keys);
+        return createCommand(BITOP, new IntegerOutput<>(codec), args);
+    }
+
+    Command<K, V, Long> bitopDiff(K destination, K sourceKey, K... keys) {
+        LettuceAssert.notNull(destination, "Destination " + MUST_NOT_BE_NULL);
+        LettuceAssert.notNull(sourceKey, "Source key " + MUST_NOT_BE_NULL);
+        notEmpty(keys);
+
+        CommandArgs<K, V> args = new CommandArgs<>(codec);
+        args.add(DIFF).addKey(destination).addKey(sourceKey).addKeys(keys);
+        return createCommand(BITOP, new IntegerOutput<>(codec), args);
+    }
+
+    Command<K, V, Long> bitopDiff1(K destination, K sourceKey, K... keys) {
+        LettuceAssert.notNull(destination, "Destination " + MUST_NOT_BE_NULL);
+        LettuceAssert.notNull(sourceKey, "Source key " + MUST_NOT_BE_NULL);
+        notEmpty(keys);
+
+        CommandArgs<K, V> args = new CommandArgs<>(codec);
+        args.add(DIFF1).addKey(destination).addKey(sourceKey).addKeys(keys);
+        return createCommand(BITOP, new IntegerOutput<>(codec), args);
+    }
+
+    Command<K, V, Long> bitopAndor(K destination, K sourceKey, K... keys) {
+        LettuceAssert.notNull(destination, "Destination " + MUST_NOT_BE_NULL);
+        LettuceAssert.notNull(sourceKey, "Source key " + MUST_NOT_BE_NULL);
+        notEmpty(keys);
+
+        CommandArgs<K, V> args = new CommandArgs<>(codec);
+        args.add(ANDOR).addKey(destination).addKey(sourceKey).addKeys(keys);
+        return createCommand(BITOP, new IntegerOutput<>(codec), args);
+    }
+
+    Command<K, V, Long> bitopOne(K destination, K... keys) {
+        LettuceAssert.notNull(destination, "Destination " + MUST_NOT_BE_NULL);
+        notEmpty(keys);
+
+        CommandArgs<K, V> args = new CommandArgs<>(codec);
+        args.add(ONE).addKey(destination).addKeys(keys);
         return createCommand(BITOP, new IntegerOutput<>(codec), args);
     }
 
@@ -1900,13 +1942,46 @@ class RedisCommandBuilder<K, V> extends BaseRedisCommandBuilder<K, V> {
         return createCommand(CommandType.INFO, new StatusOutput<>(codec), args);
     }
 
-    Command<K, V, List<K>> keys(K pattern) {
+    Command<K, V, List<K>> keys(String pattern) {
+        LettuceAssert.notNull(pattern, "Pattern " + MUST_NOT_BE_NULL);
+
+        CommandArgs<K, V> args = new CommandArgs<>(codec).add(pattern);
+        return createCommand(KEYS, new KeyListOutput<>(codec), args);
+    }
+
+    /**
+     * Find all keys matching the given pattern (legacy overload).
+     *
+     * @param pattern the pattern type: patternkey (pattern).
+     * @return List&lt;K&gt; array-reply list of keys matching {@code pattern}.
+     * @deprecated Use {@link #keys(String)} instead. This legacy overload will be removed in a later version.
+     */
+    @Deprecated
+    Command<K, V, List<K>> keysLegacy(K pattern) {
         LettuceAssert.notNull(pattern, "Pattern " + MUST_NOT_BE_NULL);
 
         return createCommand(KEYS, new KeyListOutput<>(codec), pattern);
     }
 
-    Command<K, V, Long> keys(KeyStreamingChannel<K> channel, K pattern) {
+    Command<K, V, Long> keys(KeyStreamingChannel<K> channel, String pattern) {
+        LettuceAssert.notNull(pattern, "Pattern " + MUST_NOT_BE_NULL);
+        notNull(channel);
+
+        CommandArgs<K, V> args = new CommandArgs<>(codec).add(pattern);
+        return createCommand(KEYS, new KeyStreamingOutput<>(codec, channel), args);
+    }
+
+    /**
+     * Find all keys matching the given pattern (legacy overload).
+     *
+     * @param channel the channel.
+     * @param pattern the pattern.
+     * @return Long array-reply list of keys matching {@code pattern}.
+     * @deprecated Use {@link #keys(KeyStreamingChannel, String)} instead. This legacy overload will be removed in a later
+     *             version.
+     */
+    @Deprecated
+    Command<K, V, Long> keysLegacy(KeyStreamingChannel<K> channel, K pattern) {
         LettuceAssert.notNull(pattern, "Pattern " + MUST_NOT_BE_NULL);
         notNull(channel);
 
@@ -3120,6 +3195,32 @@ class RedisCommandBuilder<K, V> extends BaseRedisCommandBuilder<K, V> {
         return createCommand(XACK, new IntegerOutput<>(codec), args);
     }
 
+    public Command<K, V, List<StreamEntryDeletionResult>> xackdel(K key, K group, String[] messageIds) {
+        return xackdel(key, group, null, messageIds);
+    }
+
+    public Command<K, V, List<StreamEntryDeletionResult>> xackdel(K key, K group, StreamDeletionPolicy policy,
+            String[] messageIds) {
+        notNullKey(key);
+        LettuceAssert.notNull(group, "Group " + MUST_NOT_BE_NULL);
+        LettuceAssert.notEmpty(messageIds, "MessageIds " + MUST_NOT_BE_EMPTY);
+        LettuceAssert.noNullElements(messageIds, "MessageIds " + MUST_NOT_CONTAIN_NULL_ELEMENTS);
+
+        CommandArgs<K, V> args = new CommandArgs<>(codec).addKey(key).addKey(group);
+
+        if (policy != null) {
+            args.add(policy);
+        }
+
+        args.add(CommandKeyword.IDS).add(messageIds.length);
+
+        for (String messageId : messageIds) {
+            args.add(messageId);
+        }
+
+        return createCommand(XACKDEL, new StreamEntryDeletionResultListOutput<>(codec), args);
+    }
+
     public Command<K, V, ClaimedMessages<K, V>> xautoclaim(K key, XAutoClaimArgs<K> xAutoClaimArgs) {
         notNullKey(key);
         LettuceAssert.notNull(xAutoClaimArgs, "XAutoClaimArgs " + MUST_NOT_BE_NULL);
@@ -3202,6 +3303,30 @@ class RedisCommandBuilder<K, V> extends BaseRedisCommandBuilder<K, V> {
         }
 
         return createCommand(XDEL, new IntegerOutput<>(codec), args);
+    }
+
+    public Command<K, V, List<StreamEntryDeletionResult>> xdelex(K key, String[] messageIds) {
+        return xdelex(key, null, messageIds);
+    }
+
+    public Command<K, V, List<StreamEntryDeletionResult>> xdelex(K key, StreamDeletionPolicy policy, String[] messageIds) {
+        notNullKey(key);
+        LettuceAssert.notEmpty(messageIds, "MessageIds " + MUST_NOT_BE_EMPTY);
+        LettuceAssert.noNullElements(messageIds, "MessageIds " + MUST_NOT_CONTAIN_NULL_ELEMENTS);
+
+        CommandArgs<K, V> args = new CommandArgs<>(codec).addKey(key);
+
+        if (policy != null) {
+            args.add(policy);
+        }
+
+        args.add(CommandKeyword.IDS).add(messageIds.length);
+
+        for (String messageId : messageIds) {
+            args.add(messageId);
+        }
+
+        return createCommand(XDELEX, new StreamEntryDeletionResultListOutput<>(codec), args);
     }
 
     public Command<K, V, String> xgroupCreate(StreamOffset<K> offset, K group, XGroupCreateArgs commandArgs) {

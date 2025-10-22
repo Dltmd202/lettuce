@@ -37,6 +37,7 @@ import io.lettuce.core.json.arguments.JsonSetArgs;
 import io.lettuce.core.models.stream.ClaimedMessages;
 import io.lettuce.core.models.stream.PendingMessage;
 import io.lettuce.core.models.stream.PendingMessages;
+import io.lettuce.core.models.stream.StreamEntryDeletionResult;
 import io.lettuce.core.output.CommandOutput;
 import io.lettuce.core.output.KeyStreamingChannel;
 import io.lettuce.core.output.KeyValueStreamingChannel;
@@ -49,10 +50,26 @@ import io.lettuce.core.protocol.ProtocolKeyword;
 import io.lettuce.core.protocol.RedisCommand;
 import io.lettuce.core.protocol.TracedCommand;
 import io.lettuce.core.resource.ClientResources;
+import io.lettuce.core.search.AggregationReply;
+import io.lettuce.core.search.AggregationReply.Cursor;
+
+import io.lettuce.core.search.SearchReply;
+import io.lettuce.core.search.SpellCheckResult;
+import io.lettuce.core.search.Suggestion;
+import io.lettuce.core.search.arguments.AggregateArgs;
+import io.lettuce.core.search.arguments.CreateArgs;
+import io.lettuce.core.search.arguments.ExplainArgs;
+import io.lettuce.core.search.arguments.FieldArgs;
+import io.lettuce.core.search.arguments.SearchArgs;
+import io.lettuce.core.search.arguments.SpellCheckArgs;
+import io.lettuce.core.search.arguments.SugAddArgs;
+import io.lettuce.core.search.arguments.SugGetArgs;
+import io.lettuce.core.search.arguments.SynUpdateArgs;
 import io.lettuce.core.tracing.TraceContext;
 import io.lettuce.core.tracing.TraceContextProvider;
 import io.lettuce.core.tracing.Tracing;
 import io.lettuce.core.vector.RawVector;
+import io.lettuce.core.vector.VSimScoreAttribs;
 import io.lettuce.core.vector.VectorMetadata;
 import io.netty.util.concurrent.EventExecutorGroup;
 import io.netty.util.concurrent.ImmediateEventExecutor;
@@ -84,20 +101,24 @@ import static io.lettuce.core.protocol.CommandType.GEORADIUS_RO;
  * @author Andrey Shlykov
  * @author Ali Takavci
  * @author Tihomir Mateev
+ * @author SeugnSu Kim
  * @since 4.0
  */
-public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclReactiveCommands<K, V>,
-        RedisHashReactiveCommands<K, V>, RedisKeyReactiveCommands<K, V>, RedisStringReactiveCommands<K, V>,
-        RedisListReactiveCommands<K, V>, RedisSetReactiveCommands<K, V>, RedisSortedSetReactiveCommands<K, V>,
-        RedisScriptingReactiveCommands<K, V>, RedisServerReactiveCommands<K, V>, RedisHLLReactiveCommands<K, V>,
-        BaseRedisReactiveCommands<K, V>, RedisTransactionalReactiveCommands<K, V>, RedisGeoReactiveCommands<K, V>,
-        RedisClusterReactiveCommands<K, V>, RedisJsonReactiveCommands<K, V>, RedisVectorSetReactiveCommands<K, V> {
+public abstract class AbstractRedisReactiveCommands<K, V>
+        implements RedisAclReactiveCommands<K, V>, RedisHashReactiveCommands<K, V>, RedisKeyReactiveCommands<K, V>,
+        RedisStringReactiveCommands<K, V>, RedisListReactiveCommands<K, V>, RedisSetReactiveCommands<K, V>,
+        RedisSortedSetReactiveCommands<K, V>, RedisScriptingReactiveCommands<K, V>, RedisServerReactiveCommands<K, V>,
+        RedisHLLReactiveCommands<K, V>, BaseRedisReactiveCommands<K, V>, RedisTransactionalReactiveCommands<K, V>,
+        RedisGeoReactiveCommands<K, V>, RedisClusterReactiveCommands<K, V>, RedisJsonReactiveCommands<K, V>,
+        RedisVectorSetReactiveCommands<K, V>, RediSearchReactiveCommands<K, V> {
 
     private final StatefulConnection<K, V> connection;
 
     private final RedisCommandBuilder<K, V> commandBuilder;
 
     private final RedisJsonCommandBuilder<K, V> jsonCommandBuilder;
+
+    private final RediSearchCommandBuilder<K, V> searchCommandBuilder;
 
     private final RedisVectorSetCommandBuilder<K, V> vectorSetCommandBuilder;
 
@@ -123,6 +144,7 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
         this.commandBuilder = new RedisCommandBuilder<>(codec);
         this.jsonCommandBuilder = new RedisJsonCommandBuilder<>(codec, parser);
         this.vectorSetCommandBuilder = new RedisVectorSetCommandBuilder<>(codec, parser);
+        this.searchCommandBuilder = new RediSearchCommandBuilder<>(codec);
         this.clientResources = connection.getResources();
         this.tracingEnabled = clientResources.tracing().isEnabled();
     }
@@ -309,6 +331,26 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     }
 
     @Override
+    public Mono<Long> bitopDiff(K destination, K sourceKey, K... keys) {
+        return createMono(() -> commandBuilder.bitopDiff(destination, sourceKey, keys));
+    }
+
+    @Override
+    public Mono<Long> bitopDiff1(K destination, K sourceKey, K... keys) {
+        return createMono(() -> commandBuilder.bitopDiff1(destination, sourceKey, keys));
+    }
+
+    @Override
+    public Mono<Long> bitopAndor(K destination, K sourceKey, K... keys) {
+        return createMono(() -> commandBuilder.bitopAndor(destination, sourceKey, keys));
+    }
+
+    @Override
+    public Mono<Long> bitopOne(K destination, K... keys) {
+        return createMono(() -> commandBuilder.bitopOne(destination, keys));
+    }
+
+    @Override
     public Mono<Long> bitpos(K key, boolean state) {
         return createMono(() -> commandBuilder.bitpos(key, state));
     }
@@ -451,10 +493,6 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     @Override
     public Mono<Long> clientUnblock(long id, UnblockType type) {
         return createMono(() -> commandBuilder.clientUnblock(id, type));
-    }
-
-    public void close() {
-        connection.close();
     }
 
     @Override
@@ -1139,11 +1177,6 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     }
 
     @Override
-    public void flushCommands() {
-        connection.flushCommands();
-    }
-
-    @Override
     public Mono<String> flushall() {
         return createMono(commandBuilder::flushall);
     }
@@ -1580,8 +1613,185 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     }
 
     @Override
-    public boolean isOpen() {
-        return connection.isOpen();
+    public Mono<String> ftCreate(String index, CreateArgs<K, V> options, List<FieldArgs<K>> fieldArgs) {
+        return createMono(() -> searchCommandBuilder.ftCreate(index, options, fieldArgs));
+    }
+
+    @Override
+    public Mono<String> ftCreate(String index, List<FieldArgs<K>> fieldArgs) {
+        return createMono(() -> searchCommandBuilder.ftCreate(index, null, fieldArgs));
+    }
+
+    @Override
+    public Mono<String> ftAliasadd(String alias, String index) {
+        return createMono(() -> searchCommandBuilder.ftAliasadd(alias, index));
+    }
+
+    @Override
+    public Mono<String> ftAliasupdate(String alias, String index) {
+        return createMono(() -> searchCommandBuilder.ftAliasupdate(alias, index));
+    }
+
+    @Override
+    public Mono<String> ftAliasdel(String alias) {
+        return createMono(() -> searchCommandBuilder.ftAliasdel(alias));
+    }
+
+    @Override
+    public Mono<String> ftAlter(String index, boolean skipInitialScan, List<FieldArgs<K>> fieldArgs) {
+        return createMono(() -> searchCommandBuilder.ftAlter(index, skipInitialScan, fieldArgs));
+    }
+
+    @Override
+    public Flux<V> ftTagvals(String index, String fieldName) {
+        return createDissolvingFlux(() -> searchCommandBuilder.ftTagvals(index, fieldName));
+    }
+
+    @Override
+    public Mono<SpellCheckResult<V>> ftSpellcheck(String index, V query) {
+        return createMono(() -> searchCommandBuilder.ftSpellcheck(index, query));
+    }
+
+    @Override
+    public Mono<SpellCheckResult<V>> ftSpellcheck(String index, V query, SpellCheckArgs<K, V> args) {
+        return createMono(() -> searchCommandBuilder.ftSpellcheck(index, query, args));
+    }
+
+    @Override
+    public Mono<Long> ftDictadd(String dict, V... terms) {
+        return createMono(() -> searchCommandBuilder.ftDictadd(dict, terms));
+    }
+
+    @Override
+    public Mono<Long> ftDictdel(String dict, V... terms) {
+        return createMono(() -> searchCommandBuilder.ftDictdel(dict, terms));
+    }
+
+    @Override
+    public Flux<V> ftDictdump(String dict) {
+        return createDissolvingFlux(() -> searchCommandBuilder.ftDictdump(dict));
+    }
+
+    @Override
+    public Mono<String> ftExplain(String index, V query) {
+        return createMono(() -> searchCommandBuilder.ftExplain(index, query));
+    }
+
+    @Override
+    public Mono<String> ftExplain(String index, V query, ExplainArgs<K, V> args) {
+        return createMono(() -> searchCommandBuilder.ftExplain(index, query, args));
+    }
+
+    @Override
+    public Flux<V> ftList() {
+        return createDissolvingFlux(() -> searchCommandBuilder.ftList());
+    }
+
+    @Override
+    public Mono<Map<V, List<V>>> ftSyndump(String index) {
+        return createMono(() -> searchCommandBuilder.ftSyndump(index));
+    }
+
+    @Override
+    public Mono<String> ftSynupdate(String index, V synonymGroupId, V... terms) {
+        return createMono(() -> searchCommandBuilder.ftSynupdate(index, synonymGroupId, terms));
+    }
+
+    @Override
+    public Mono<String> ftSynupdate(String index, V synonymGroupId, SynUpdateArgs<K, V> args, V... terms) {
+        return createMono(() -> searchCommandBuilder.ftSynupdate(index, synonymGroupId, args, terms));
+    }
+
+    @Override
+    public Mono<Long> ftSugadd(K key, V string, double score) {
+        return createMono(() -> searchCommandBuilder.ftSugadd(key, string, score));
+    }
+
+    @Override
+    public Mono<Long> ftSugadd(K key, V string, double score, SugAddArgs<K, V> args) {
+        return createMono(() -> searchCommandBuilder.ftSugadd(key, string, score, args));
+    }
+
+    @Override
+    public Mono<Boolean> ftSugdel(K key, V string) {
+        return createMono(() -> searchCommandBuilder.ftSugdel(key, string));
+    }
+
+    @Override
+    public Flux<Suggestion<V>> ftSugget(K key, V prefix) {
+        return createDissolvingFlux(() -> searchCommandBuilder.ftSugget(key, prefix));
+    }
+
+    @Override
+    public Flux<Suggestion<V>> ftSugget(K key, V prefix, SugGetArgs<K, V> args) {
+        return createDissolvingFlux(() -> searchCommandBuilder.ftSugget(key, prefix, args));
+    }
+
+    @Override
+    public Mono<Long> ftSuglen(K key) {
+        return createMono(() -> searchCommandBuilder.ftSuglen(key));
+    }
+
+    @Override
+    public Mono<String> ftAlter(String index, List<FieldArgs<K>> fieldArgs) {
+        return createMono(() -> searchCommandBuilder.ftAlter(index, false, fieldArgs));
+    }
+
+    @Override
+    public Mono<String> ftCursordel(String index, Cursor cursor) {
+        return createMono(() -> {
+            if (cursor == null) {
+                throw new IllegalArgumentException("cursor must not be null");
+            }
+            long cursorId = cursor.getCursorId();
+            return searchCommandBuilder.ftCursordel(index, cursorId > 0 ? cursorId : 0);
+        });
+    }
+
+    @Override
+    public Mono<String> ftDropindex(String index, boolean deleteDocumentKeys) {
+        return createMono(() -> searchCommandBuilder.ftDropindex(index, deleteDocumentKeys));
+    }
+
+    @Override
+    public Mono<String> ftDropindex(String index) {
+        return createMono(() -> searchCommandBuilder.ftDropindex(index, false));
+    }
+
+    @Override
+    public Mono<SearchReply<K, V>> ftSearch(String index, V query, SearchArgs<K, V> args) {
+        return createMono(() -> searchCommandBuilder.ftSearch(index, query, args));
+    }
+
+    @Override
+    public Mono<SearchReply<K, V>> ftSearch(String index, V query) {
+        return createMono(() -> searchCommandBuilder.ftSearch(index, query, SearchArgs.<K, V> builder().build()));
+    }
+
+    @Override
+    public Mono<AggregationReply<K, V>> ftAggregate(String index, V query, AggregateArgs<K, V> args) {
+        return createMono(() -> searchCommandBuilder.ftAggregate(index, query, args));
+    }
+
+    @Override
+    public Mono<AggregationReply<K, V>> ftAggregate(String index, V query) {
+        return createMono(() -> searchCommandBuilder.ftAggregate(index, query, null));
+    }
+
+    @Override
+    public Mono<AggregationReply<K, V>> ftCursorread(String index, Cursor cursor, int count) {
+        return createMono(() -> {
+            if (cursor == null) {
+                throw new IllegalArgumentException("cursor must not be null");
+            }
+            long cursorId = cursor.getCursorId();
+            return searchCommandBuilder.ftCursorread(index, cursorId > 0 ? cursorId : 0, count);
+        });
+    }
+
+    @Override
+    public Mono<AggregationReply<K, V>> ftCursorread(String index, Cursor cursor) {
+        return ftCursorread(index, cursor, -1);
     }
 
     @Override
@@ -1592,6 +1802,16 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     @Override
     public Flux<Long> jsonArrappend(K key, JsonValue... values) {
         return createDissolvingFlux(() -> jsonCommandBuilder.jsonArrappend(key, JsonPath.ROOT_PATH, values));
+    }
+
+    @Override
+    public Flux<Long> jsonArrappend(K key, JsonPath jsonPath, String... jsonStrings) {
+        return createDissolvingFlux(() -> jsonCommandBuilder.jsonArrappend(key, jsonPath, jsonStrings));
+    }
+
+    @Override
+    public Flux<Long> jsonArrappend(K key, String... jsonStrings) {
+        return createDissolvingFlux(() -> jsonCommandBuilder.jsonArrappend(key, JsonPath.ROOT_PATH, jsonStrings));
     }
 
     @Override
@@ -1606,8 +1826,24 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     }
 
     @Override
+    public Flux<Long> jsonArrindex(K key, JsonPath jsonPath, String jsonString, JsonRangeArgs range) {
+        return createDissolvingFlux(() -> jsonCommandBuilder.jsonArrindex(key, jsonPath, jsonString, range));
+    }
+
+    @Override
+    public Flux<Long> jsonArrindex(K key, JsonPath jsonPath, String jsonString) {
+        return createDissolvingFlux(
+                () -> jsonCommandBuilder.jsonArrindex(key, jsonPath, jsonString, JsonRangeArgs.Builder.defaults()));
+    }
+
+    @Override
     public Flux<Long> jsonArrinsert(K key, JsonPath jsonPath, int index, JsonValue... values) {
         return createDissolvingFlux(() -> jsonCommandBuilder.jsonArrinsert(key, jsonPath, index, values));
+    }
+
+    @Override
+    public Flux<Long> jsonArrinsert(K key, JsonPath jsonPath, int index, String... jsonStrings) {
+        return createDissolvingFlux(() -> jsonCommandBuilder.jsonArrinsert(key, jsonPath, index, jsonStrings));
     }
 
     @Override
@@ -1677,6 +1913,11 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     }
 
     @Override
+    public Mono<String> jsonMerge(K key, JsonPath jsonPath, String jsonString) {
+        return createMono(() -> jsonCommandBuilder.jsonMerge(key, jsonPath, jsonString));
+    }
+
+    @Override
     public Flux<JsonValue> jsonMGet(JsonPath jsonPath, K... keys) {
         return createDissolvingFlux(() -> jsonCommandBuilder.jsonMGet(jsonPath, keys));
     }
@@ -1723,6 +1964,16 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     }
 
     @Override
+    public Mono<String> jsonSet(K key, JsonPath jsonPath, String jsonString, JsonSetArgs options) {
+        return createMono(() -> jsonCommandBuilder.jsonSet(key, jsonPath, jsonString, options));
+    }
+
+    @Override
+    public Mono<String> jsonSet(K key, JsonPath jsonPath, String jsonString) {
+        return createMono(() -> jsonCommandBuilder.jsonSet(key, jsonPath, jsonString, JsonSetArgs.Builder.defaults()));
+    }
+
+    @Override
     public Flux<Long> jsonStrappend(K key, JsonPath jsonPath, JsonValue value) {
         return createDissolvingFlux(() -> jsonCommandBuilder.jsonStrappend(key, jsonPath, value));
     }
@@ -1730,6 +1981,16 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     @Override
     public Flux<Long> jsonStrappend(K key, JsonValue value) {
         return createDissolvingFlux(() -> jsonCommandBuilder.jsonStrappend(key, JsonPath.ROOT_PATH, value));
+    }
+
+    @Override
+    public Flux<Long> jsonStrappend(K key, JsonPath jsonPath, String jsonString) {
+        return createDissolvingFlux(() -> jsonCommandBuilder.jsonStrappend(key, jsonPath, jsonString));
+    }
+
+    @Override
+    public Flux<Long> jsonStrappend(K key, String jsonString) {
+        return createDissolvingFlux(() -> jsonCommandBuilder.jsonStrappend(key, JsonPath.ROOT_PATH, jsonString));
     }
 
     @Override
@@ -1893,13 +2154,61 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     }
 
     @Override
-    public Flux<K> keys(K pattern) {
-        return createDissolvingFlux(() -> commandBuilder.keys(pattern));
+    public Mono<Map<V, VSimScoreAttribs>> vsimWithScoreWithAttribs(K key, Double... vectors) {
+        return createMono(() -> vectorSetCommandBuilder.vsimWithScoreWithAttribs(key, null, vectors));
     }
 
     @Override
-    public Mono<Long> keys(KeyStreamingChannel<K> channel, K pattern) {
+    public Mono<Map<V, VSimScoreAttribs>> vsimWithScoreWithAttribs(K key, V element) {
+        return createMono(() -> vectorSetCommandBuilder.vsimWithScoreWithAttribs(key, null, element));
+    }
+
+    @Override
+    public Mono<Map<V, VSimScoreAttribs>> vsimWithScoreWithAttribs(K key, VSimArgs args, Double... vectors) {
+        return createMono(() -> vectorSetCommandBuilder.vsimWithScoreWithAttribs(key, args, vectors));
+    }
+
+    @Override
+    public Mono<Map<V, VSimScoreAttribs>> vsimWithScoreWithAttribs(K key, VSimArgs args, V element) {
+        return createMono(() -> vectorSetCommandBuilder.vsimWithScoreWithAttribs(key, args, element));
+    }
+
+    @Override
+    public Flux<K> keys(String pattern) {
+        return createDissolvingFlux(() -> commandBuilder.keys(pattern));
+    }
+
+    /**
+     * Find all keys matching the given pattern (legacy overload).
+     *
+     * @param pattern the pattern type: patternkey (pattern).
+     * @return K array-reply list of keys matching {@code pattern}.
+     * @deprecated Use {@link #keys(String)} instead. This legacy overload will be removed in a later version.
+     */
+    @Deprecated
+    @Override
+    public Flux<K> keysLegacy(K pattern) {
+        return createDissolvingFlux(() -> commandBuilder.keysLegacy(pattern));
+    }
+
+    @Override
+    public Mono<Long> keys(KeyStreamingChannel<K> channel, String pattern) {
         return createMono(() -> commandBuilder.keys(channel, pattern));
+    }
+
+    /**
+     * Find all keys matching the given pattern (legacy overload).
+     *
+     * @param channel the channel.
+     * @param pattern the pattern.
+     * @return Long array-reply list of keys matching {@code pattern}.
+     * @deprecated Use {@link #keys(KeyStreamingChannel, String)} instead. This legacy overload will be removed in a later
+     *             version.
+     */
+    @Deprecated
+    @Override
+    public Mono<Long> keysLegacy(KeyStreamingChannel<K> channel, K pattern) {
+        return createMono(() -> commandBuilder.keysLegacy(channel, pattern));
     }
 
     @Override
@@ -2265,11 +2574,6 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     }
 
     @Override
-    public void reset() {
-        getConnection().reset();
-    }
-
-    @Override
     public Mono<String> restore(K key, long ttl, byte[] value) {
         return createMono(() -> commandBuilder.restore(key, value, RestoreArgs.Builder.ttl(ttl)));
     }
@@ -2431,11 +2735,6 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     @Override
     public Mono<V> setGet(K key, V value, SetArgs setArgs) {
         return createMono(() -> commandBuilder.setGet(key, value, setArgs));
-    }
-
-    @Override
-    public void setAutoFlushCommands(boolean autoFlush) {
-        connection.setAutoFlushCommands(autoFlush);
     }
 
     @Override
@@ -2771,6 +3070,16 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     }
 
     @Override
+    public Flux<StreamEntryDeletionResult> xackdel(K key, K group, String... messageIds) {
+        return createDissolvingFlux(() -> commandBuilder.xackdel(key, group, messageIds));
+    }
+
+    @Override
+    public Flux<StreamEntryDeletionResult> xackdel(K key, K group, StreamDeletionPolicy policy, String... messageIds) {
+        return createDissolvingFlux(() -> commandBuilder.xackdel(key, group, policy, messageIds));
+    }
+
+    @Override
     public Mono<String> xadd(K key, Map<K, V> body) {
         return createMono(() -> commandBuilder.xadd(key, null, body));
     }
@@ -2809,6 +3118,16 @@ public abstract class AbstractRedisReactiveCommands<K, V> implements RedisAclRea
     @Override
     public Mono<Long> xdel(K key, String... messageIds) {
         return createMono(() -> commandBuilder.xdel(key, messageIds));
+    }
+
+    @Override
+    public Flux<StreamEntryDeletionResult> xdelex(K key, String... messageIds) {
+        return createDissolvingFlux(() -> commandBuilder.xdelex(key, messageIds));
+    }
+
+    @Override
+    public Flux<StreamEntryDeletionResult> xdelex(K key, StreamDeletionPolicy policy, String... messageIds) {
+        return createDissolvingFlux(() -> commandBuilder.xdelex(key, policy, messageIds));
     }
 
     @Override
